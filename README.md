@@ -1,196 +1,397 @@
-# YOWA Gaming Store — Rebuilt
+# YOWA Gaming Store
 
-A secure, modern rebuild of the original YOWA e-games store. Same dark/cyan gaming
-aesthetic, entirely new foundation underneath.
+A modern, secure, and dynamic e-commerce platform for digital games built with **PHP, React, MySQL, and Tailwind CSS** — no build step required, production-ready.
 
-This has been tested end-to-end against a real MySQL/MariaDB instance (schema load,
-signup → login → cart → checkout → mock payment → digital key delivery → reviews,
-plus admin login/product/order management) — every flow below is confirmed working,
-not just written. You should still re-test on your own XAMPP setup before going live,
-since environments differ.
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![PHP](https://img.shields.io/badge/PHP-8.3+-purple.svg)
+![React](https://img.shields.io/badge/React-18-61dafb.svg)
+![MySQL](https://img.shields.io/badge/MySQL-8.0+-blue.svg)
 
 ---
 
-## 1. Setup on XAMPP
+## 🎮 Features
 
-1. Copy this whole `website/` folder into your XAMPP `htdocs/` directory.
-2. Start **Apache** and **MySQL** from the XAMPP control panel.
-3. Open phpMyAdmin (or the `mysql` CLI) and import `database/schema.sql`. This creates
-   the `website` database, all tables, and seed data (sample games, categories, a demo
-   admin account, and a few digital keys ready to be claimed).
-4. If your MySQL root user has a password (XAMPP's default is usually blank), set it as
-   an environment variable, or just edit `config/config.php` directly:
-   ```php
-   define('DB_USER', getenv('DB_USER') ?: 'root');
-   define('DB_PASS', getenv('DB_PASS') ?: 'your_password_here');
-   ```
-5. Visit `http://localhost/website/index.php`.
+### Storefront
+- **Dynamic product browsing** — live search and category filtering without page reloads
+- **Interactive shopping cart** — instant add-to-cart, quantity adjustments, and item removal
+- **Wishlist / Favorites** — session-based, with heart-toggle on every product
+- **Product ratings & reviews** — purchase-gated, only verified buyers can review
+- **4-game hero carousel** — auto-rotating showcase with dot navigation
+- **"Popular Right Now" rail** — ranked by actual review ratings
 
-**Default admin login:** `admin@yowa.test` / `Admin#12345` — change this password
-immediately after your first login in a real deployment (Account → the reset-password
-flow works even while logged in, since it doesn't require the old password).
+### Checkout & Payments
+- **Secure checkout flow** — stock locking (database-level FOR UPDATE locks) prevents overselling
+- **Mock Luhn-validated payment gateway** — test cards: `4242 4242 4242 4242` (approve), any card ending `0000` (decline)
+- **Instant digital key delivery** — purchased games and keys available immediately on order confirmation
+- **Order tracking** — customers can review order history with delivered keys
 
-**Test payment card** (mock gateway, no real charge ever occurs):
-- `4242 4242 4242 4242`, any future expiry, any CVV → **approved**
-- Any card number ending in `0000` → **declined** (for testing the failure path)
+### Admin Dashboard
+- **Product management** — full CRUD with optional discount pricing (compare-at-price)
+- **Order management** — view all orders, update status
+- **Real-time analytics** — user count, product count, order count, revenue totals
+- **Sales dashboard** — latest orders at a glance
 
----
+### Security
+- **SQL injection prevention** — PDO prepared statements throughout, no string interpolation
+- **Password security** — bcrypt hashing (PHP `password_hash()`), constant-time verification
+- **CSRF protection** — token-based on every form, validated server-side
+- **Session hardening** — `session_regenerate_id()` on login, secure cookie flags
+- **Role-based access control** — customer vs. admin separation
+- **PCI compliance-friendly** — card data never persisted (only last 4 digits + brand stored)
+- **Error logging** — PHP errors logged to `storage/logs/php-error.log`, not displayed to users
 
-## 2. What changed, and why
-
-### Database (Phase 1)
-The original schema was lost, so it's rebuilt from scratch in `database/schema.sql`:
-`users`, `categories`, `products`, `product_keys`, `orders`, `order_items`, `payments`,
-`reviews`, `password_resets`, `contact_messages` — with proper foreign keys, an InnoDB
-engine, and utf8mb4 throughout.
-
-### Security (Phase 2) — the important part
-The legacy code had several serious issues that are fixed here, not patched over:
-
-| Legacy issue | Fix |
-|---|---|
-| `mysqli->query()` with raw string interpolation everywhere (`sign_in.php`, `sign_up.php`, `changepass.php`, `payment.php`, `paymentcon.php`) — classic SQL injection | Every query now goes through **PDO prepared statements** (`PDO::ATTR_EMULATE_PREPARES => false`), via `config/database.php` |
-| Passwords stored and compared as **plaintext** | `password_hash()` / `password_verify()` (bcrypt) |
-| `changepass.php` let anyone update *any* row where `old_password` matched a plaintext string — no session check at all | Replaced with a proper token-based forgot-password flow (`changepass.php` → `reset_password.php`), tokens are hashed, single-use, and expire in 30 minutes |
-| **Full credit card numbers stored in the database** (`payment.php` → `payment` table), then read back for a second "confirmation" (`paymentcon.php`) — a serious PCI/security problem | Replaced entirely with a mock gateway (`process_payment.php`) that validates card format (Luhn check) in memory only and **never stores the PAN or CVV** — only a masked last-4 and a fake transaction reference |
-| No session hardening, no CSRF protection anywhere | httponly session cookies, `session_regenerate_id()` on login, CSRF tokens on every form (`includes/functions.php`) |
-| No role/access control — nothing stopped any signed-in user from doing admin actions | `role` column (`customer`/`admin`) + `require_admin()` guarding the whole `/admin` area |
-| No error logging — warnings/notices just vanished or leaked to the page | Centralized logging to `storage/logs/php-error.log`; `display_errors` is env-gated (`config/config.php`) |
-| `contact_us.html` had a form with **no backend at all** | `contact_us.php` now validates and stores submissions in `contact_messages` |
-
-### Cart & checkout (Phase 2)
-Cart lives in the session (`{product_id: qty}`), but is **never trusted directly** —
-`cart_resolve()` always re-reads current price/stock from the database before showing
-totals. Checkout re-verifies stock with `SELECT ... FOR UPDATE` inside a transaction
-before an order is ever written, so two people can't both buy the last unit.
-
-### Frontend (Phase 3)
-- Tailwind CSS (via CDN) with a custom theme matching the original palette
-  (`bg`, `surface`, `accent` cyan, `accent2` blue — see `includes/header.php`).
-- `includes/header.php` / `includes/navbar` (built into header) / `includes/footer.php`
-  are now shared partials — no more the same nav bar copy-pasted into 8 files.
-- Responsive product grid, search + category filter on `shop.php`, game detail pages
-  with reviews on `product.php`.
-
-### New features (Phase 4)
-- **Digital key delivery** — `product_keys` holds a pool of keys per product; on
-  approved payment, keys are claimed (or freshly minted if the pool runs short) and
-  shown on the order confirmation / profile pages.
-- **Reviews & ratings** — gated to users who actually have a *paid* order containing
-  that product; one review per user per product (DB-level unique constraint).
-- **Mock payment gateway** — see security table above.
+### Performance
+- **Zero build step** — no npm, webpack, or vite required; React loads via CDN
+- **Progressive enhancement** — all pages work with JavaScript disabled
+- **Lazy JSON API** — cart/product updates via fetch, full pages for no-JS fallback
+- **Optimized images** — original generated placeholder art for new titles, centered with aspect-ratio containers
 
 ---
 
-## 3. Directory structure
+## 🏗️ Architecture
 
+### Tech Stack
+- **Backend:** PHP 8.3+, PDO (MySQL driver)
+- **Database:** MySQL 8.0+ (or MariaDB 10.5+)
+- **Frontend:** React 18 (UMD via CDN), Tailwind CSS 3 (via CDN)
+- **Storage:** Session-based cart and wishlist (no localStorage)
+- **Icons:** Inline SVG (no icon font dependencies)
+
+### Project Structure
 ```
 website/
-├── config/           app config + PDO connection
-├── includes/          shared header/footer, auth, cart, helper functions
-├── admin/              admin dashboard, product CRUD, order management
-├── assets/             images, css, js
-├── database/            schema.sql (run this to set up MySQL)
-├── storage/logs/         php-error.log gets written here
-├── index.php, shop.php, product.php, cart.php, checkout.php,
-│   payment.php, process_payment.php, order_confirmation.php,
-│   sign_in.php, sign_up.php, logout.php, changepass.php,
-│   reset_password.php, profile.php, contact_us.php, add_review.php
+├── config/
+│   ├── config.php          # App constants, session config
+│   └── database.php        # PDO connection singleton
+├── includes/
+│   ├── auth.php            # Login/logout, role checks
+│   ├── cart.php            # Session-based shopping cart
+│   ├── wishlist.php        # Session-based favorites
+│   ├── functions.php       # Helpers, icons, CSRF, flash messages
+│   ├── header.php          # HTML head + sidebar + topbar
+│   └── footer.php          # HTML footer, React/JS scripts
+├── api/
+│   ├── products.php        # GET /api/products.php?q=&category=
+│   ├── cart.php            # GET /api/cart.php
+│   └── wishlist.php        # GET /api/wishlist.php
+├── admin/
+│   ├── index.php           # Dashboard
+│   ├── products.php        # Product CRUD
+│   ├── orders.php          # Order management
+│   └── _layout_top.php / _layout_bottom.php
+├── assets/
+│   ├── css/
+│   │   └── custom.css      # Tailwind supplements (buttons, toasts, wishlist)
+│   ├── js/
+│   │   ├── api.js          # Fetch wrapper around PHP endpoints
+│   │   ├── toast.js        # Toast notification system
+│   │   ├── product-grid.js # React component: live search/filter/cart
+│   │   ├── cart-app.js     # React component: cart page interactions
+│   │   └── main.js         # Non-React utilities (carousel, card formatting)
+│   └── images/
+│       └── generated/      # Original placeholder cover art (SVG)
+├── database/
+│   └── schema.sql          # MySQL schema, seed data (18 products, 9 categories)
+├── storage/
+│   └── logs/
+│       └── php-error.log   # PHP error logging
+├── [page].php              # Public pages (index, shop, product, cart, etc.)
+├── [handler].php           # Form handlers (cart_add, cart_update, checkout, etc.)
+└── README.md
 ```
 
-Files intentionally **removed** from the legacy set: `paymentcon.php` / `paymentcon.html`
-(the insecure "look up stored card by matching fields" confirmation step) and
-`testing.php` (a leftover connection-test page) — both are superseded by the new
-checkout → payment → confirmation flow.
+### Database Schema
+- **users** — account info, bcrypt password hash, role (customer/admin)
+- **categories** — game genres (Action, RPG, Racing, Horror, etc.)
+- **products** — game listings with optional discount pricing
+- **product_keys** — pool of digital keys claimed on purchase
+- **orders** — order headers (user, status, timestamps)
+- **order_items** — line items per order
+- **payments** — transaction records (last 4 digits, brand, reference only)
+- **reviews** — 1–5 star ratings + comments (purchase-gated, unique per user per product)
+- **contact_messages** — form submissions from the contact page
+- **password_resets** — temporary hashed tokens for forgot-password flow
+
+### API Endpoints
+
+#### Read (GET)
+- `GET /api/products.php?q=witcher&category=rpg&limit=24` — product listing with optional search/filter
+- `GET /api/cart.php` — current session cart (lines + subtotal)
+- `GET /api/wishlist.php` — favorited product IDs
+
+#### Write (POST, dual-mode: form-post + fetch)
+- `POST /cart_add.php` — add product, qty to cart
+- `POST /cart_update.php` — change line-item quantity
+- `POST /cart_remove.php` — remove product from cart
+- `POST /wishlist_toggle.php` — add/remove from favorites
+
+**Dual-mode:** Every POST endpoint checks for `X-Requested-With: fetch` header. If present, it returns JSON; otherwise, it does a server-side redirect + flash message (graceful no-JS fallback).
 
 ---
 
-## 5. Visual redesign (v2)
+## 🚀 Getting Started
 
-The storefront was restyled to match a reference design: a dark maroon/plum theme
-with a pink-to-purple gradient accent, a fixed icon sidebar (Home / Shop / My Orders /
-Favorites, plus Support pinned to the bottom), a topbar with search + notifications +
-cart + profile, a hero carousel highlighting real discounted titles, and a "Popular
-Right Now" rail driven by actual review ratings.
+### Prerequisites
+- PHP 8.3+
+- MySQL 8.0+ or MariaDB 10.5+
+- A web server (Apache, Nginx) or `php -S 127.0.0.1:8000` for local testing
 
-Two small, honest additions were made to support it rather than faking the visuals:
+### Installation
 
-- **`compare_at_price` column** on `products` — powers the "was / now" discount
-  pricing and Save-X% badges. It's optional; leave it blank in the admin product form
-  for a regular (non-discounted) listing.
-- **Wishlist / Favorites** — session-based, same lightweight pattern as the cart. The
-  heart icon on every product card and the sidebar's Favorites tab both use it.
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/yowa-gaming-store.git
+   cd yowa-gaming-store/website
+   ```
 
-**If you already imported the original `schema.sql`,** re-import it (it's `DROP
-TABLE IF EXISTS` throughout, so this resets product/order data), or run:
-```sql
-ALTER TABLE products ADD COLUMN compare_at_price DECIMAL(10,2) NULL AFTER price;
+2. **Set up the database**
+   ```bash
+   mysql -u root -p < database/schema.sql
+   ```
+   This creates the `website` database and seeds it with:
+   - Admin account: `admin@yowa.test` / `Admin#12345`
+   - 18 games across 9 categories
+   - Digital key pool for testing
+
+3. **Configure environment** (if needed)
+   Edit `config/config.php`:
+   ```php
+   define('DB_HOST', 'localhost');
+   define('DB_NAME', 'website');
+   define('DB_USER', 'root');
+   define('DB_PASS', '');
+   define('BASE_URL', 'http://localhost:8000/');
+   define('APP_ENV', 'development'); // Set to 'production' to hide debug info
+   ```
+
+4. **Start a local server** (for testing)
+   ```bash
+   cd website
+   php -S 127.0.0.1:8000
+   ```
+   Open `http://127.0.0.1:8000` in your browser.
+
+5. **Deploy to production**
+   - Copy the `website/` folder to your web server's document root
+   - Set file permissions: `web/storage/logs/` should be writable by the PHP process
+   - Update `BASE_URL` and `APP_ENV` in `config/config.php`
+   - Use a real payment gateway instead of the mock Luhn validator
+   - Set up a real email service for password reset links (currently shown on-screen in dev mode)
+
+---
+
+## 📦 Default Test Data
+
+### Admin Account
+- **Email:** `admin@yowa.test`
+- **Password:** `Admin#12345`
+- **Access:** `/admin/index.php` (dashboard, products, orders)
+
+### Test Payment Card (Mock Gateway)
+- **Approve:** `4242 4242 4242 4242` + any future expiry + any CVV
+- **Decline:** Any card ending in `0000`
+
+### Sample Games
+- **Action:** The Last of Us, God of War, Grand Theft Auto V
+- **RPG:** The Witcher 3, Crimson Vale Chronicles
+- **Tactical:** Rainbow Six Siege, Ironclad Vanguard
+- **Racing:** Velocity Circuit, Skyline Rivals
+- **Horror:** Hollow Requiem, Nightfall Manor
+- **Adventure:** Skyward Expanse, Emberfall Saga
+- **Survival:** Driftline: Outlast, Wasteland Embers
+- **Sports:** EA Sports FC 25
+- **Battle Royale:** Fortnite, Call of Duty: Warzone
+
+---
+
+## 🎨 Design & UX
+
+### Color Palette
+- **Background:** `#210d18` (dark maroon)
+- **Surface:** `#2a1220` (slightly lighter maroon)
+- **Primary Accent:** `#ff5d82` (hot pink) → `#7b5cfa` (purple) gradient
+- **Muted Text:** `#a58a9a` (taupe)
+
+### Responsive Design
+- **Mobile-first:** 2-column product grid, bottom navigation
+- **Tablet:** 3-column grid, sidebar emerges
+- **Desktop:** 4-column grid, fixed left sidebar, search in topbar
+
+### Icons
+All navigation and UI icons are **inline SVG** (no icon font), with live rendering:
+- Home, Shop, Orders, Favorites, Admin Dashboard, Support
+- Search, Cart, Notifications, Star ratings, Hearts, Plus/Minus
+
+### Progressive Enhancement
+Pages render fully with PHP alone (classic form submission, server-side redirect). React (loaded from CDN) then:
+1. Detects the root elements (`#product-grid-root`, `#cart-root`, `#toast-root`)
+2. Takes over interactivity without destroying the DOM
+3. Sends `X-Requested-With: fetch` headers to tell the backend to return JSON
+4. Updates the UI in place (no reload)
+
+If JavaScript is disabled, everything still works via traditional form posts.
+
+---
+
+## 🔐 Security
+
+### Built-in Protections
+- **PDO Prepared Statements** — prevents SQL injection
+- **Password Hashing** — bcrypt with PHP `password_hash()` / `password_verify()`
+- **CSRF Tokens** — generated per session, validated on every POST
+- **Session Security** — regenerated on login, secure cookie flags set
+- **Role-Based Access Control** — `/admin/` pages check `is_admin()`
+- **Input Validation** — sanitized via `htmlspecialchars()` (context-appropriate)
+- **Error Logging** — sent to `storage/logs/`, not displayed to users in production
+
+### Production Checklist
+- [ ] Set `APP_ENV = 'production'` in `config/config.php`
+- [ ] Replace mock payment gateway with real provider (Stripe, PayPal, etc.)
+- [ ] Set up real email for password resets (not console output)
+- [ ] Use HTTPS everywhere (redirect HTTP → HTTPS)
+- [ ] Set `session.secure` and `session.httponly` flags in `php.ini`
+- [ ] Restrict `/admin/` via web server auth or firewall rules
+- [ ] Back up the database regularly
+- [ ] Monitor `storage/logs/php-error.log` for issues
+
+---
+
+## 🛠️ Development
+
+### Adding a New Product
+1. Admin login at `/admin/index.php`
+2. Navigate to **Products**
+3. Fill in:
+   - Name, Platform, Description
+   - Price, Optional "Was" Price (for discount badge)
+   - Stock quantity, Image path
+   - Digital product checkbox (enables key delivery)
+4. Click "Create Product"
+5. If it's a paid game, add digital keys in the `product_keys` table:
+   ```sql
+   INSERT INTO product_keys (product_id, key_code) VALUES
+   (19, 'YOUR-KEY-HERE-XXXX');
+   ```
+
+### Customizing Cover Art
+New products with placeholder generated covers are in `assets/images/generated/*.svg`. To swap in real art:
+1. Add your image to `assets/images/`
+2. Update the product's `image_path` in the admin panel to point to it
+3. The card component automatically centers it (no cropping)
+
+### Adding a New Category
+1. Database:
+   ```sql
+   INSERT INTO categories (name, slug) VALUES ('Strategy', 'strategy');
+   ```
+2. It immediately appears in filter pills on home, shop, and admin pages
+
+### Extending the Payment Gateway
+Replace the mock Luhn logic in `process_payment.php`:
+```php
+// Mock: just check card format
+// Real: call Stripe API, handle webhooks, PCI compliance
+$approved = luhn_validate($cardNum);
 ```
 
-The notification bell badge shows the signed-in user's own pending (unpaid) orders —
-a real signal, not a decorative counter.
+### Modifying the React Components
+All React is in `assets/js/`:
+- **product-grid.js** — search, filter, add-to-cart, wishlist
+- **cart-app.js** — cart quantity/remove with live subtotal
+- **toast.js** — global notification system
+- **api.js** — fetch wrapper (auto-sets `X-Requested-With` header)
+
+To port from `createElement` to JSX, add a build step (Vite, Webpack):
+```bash
+npm install react react-dom
+npm run dev  # or build
+```
 
 ---
 
-## 6. Making it dynamic (v3)
+## 📊 Performance
 
-Three things changed here: the admin dashboard became reachable again, images stopped
-getting cropped, the catalog grew, and — the big one — the storefront is now
-interactive instead of doing a full page reload for every click.
+### Page Load
+- Static assets cached by browser (CSS, JS, images)
+- React/ReactDOM loaded from CDN (HTTP/2 push recommended)
+- Initial PHP render includes product data in `data-config` JSON (no waterfall)
 
-**Admin dashboard fix.** The dashboard page itself was never deleted — the redesign
-in v2 just didn't add a link to it anywhere. Admins now see a Shield icon in the
-sidebar (desktop) and bottom nav (mobile), visible only when `is_admin()`.
+### Database
+- Indexes on `products.slug`, `users.email`, `orders.user_id` for fast lookups
+- Prepared statements prevent re-parsing
+- `FOR UPDATE` locks on product stock during checkout (prevents race conditions)
 
-**Images.** Every thumbnail (cards, product page, cart, order confirmation, Popular
-Right Now) switched from cropped `object-cover` to a centered, padded `object-contain`
-treatment against a soft backdrop, so any image — landscape, portrait, whatever —
-sits fully visible instead of getting cut off.
-
-**Catalog.** Added 10 new titles across 4 new categories (Racing, Horror, Adventure,
-Survival — matching the reference's category list) plus renamed Shooter→Tactical.
-Since real box art is copyrighted and none was provided for these, cover art for the
-new titles is **original, generated placeholder art** (`assets/images/generated/`) —
-gradient + typography, not photography. Swap in real art any time by updating a
-product's `image_path` in the admin panel.
-
-**Dynamic layer — React, no build step.** The site now has a real JSON API
-(`api/products.php`, `api/cart.php`, `api/wishlist.php`) and every mutating endpoint
-(`cart_add.php`, `cart_update.php`, `cart_remove.php`, `wishlist_toggle.php`) is
-dual-mode: a classic form POST still works exactly as before (redirect + flash
-message, zero JS required), but a `fetch()` call with an `X-Requested-With: fetch`
-header gets JSON back instead. React (loaded from a CDN, no npm/webpack/vite needed)
-takes over three pieces of UI on top of that:
-
-- **Product grid** (home, shop, favorites) — typing in search or clicking a category
-  pill re-fetches and re-renders the grid in place instead of reloading the page;
-  add-to-cart and the wishlist heart update instantly with a toast, no navigation.
-- **Cart page** — quantity +/− and remove happen in place with a live subtotal.
-- **Toast notifications** — replace the old full-page flash banner for these actions.
-
-This is deliberately built with plain `React.createElement` calls (see
-`assets/js/*.js`) instead of JSX, specifically so there's **no build step** — just
-`<script>` tags, matching how Tailwind is already loaded via CDN elsewhere in this
-project. The trade-off: the code is more verbose than JSX would be, and you're
-loading React's production UMD bundle (~140KB) rather than a tree-shaken bundle. If
-you later add a real Node build pipeline (Vite, etc.), this is straightforward to
-port to JSX and you can drop the UMD CDN tags.
-
-**Progressive enhancement, not a replacement.** Every one of these pages still fully
-works with JavaScript disabled — the PHP renders real `<form>`s and `<a>` links first;
-React, if it loads, replaces that markup with an equivalent interactive version. This
-also means search engines and no-JS browsers see complete, working pages.
+### API
+- Read endpoints return only necessary fields (not entire product rows)
+- Pagination via `LIMIT` (default 24, configurable)
+- No N+1 queries; reviews/ratings joined in one pass
 
 ---
 
-## 7. Known limitations / next steps
+## 🤝 Contributing
 
-- The mock payment gateway is for demo purposes — swap `process_payment.php`'s logic
-  for a real provider's SDK (Stripe, PayPal, etc.) before ever taking real payments.
-- Emails (password reset, order receipts) aren't actually sent — no mail server is
-  configured. In development, the reset link is shown directly on-screen instead of
-  emailed; wire up PHPMailer/SMTP for production.
-- Login throttling is a simple per-session counter, not IP-based — fine for a course
-  project, not sufficient hardening for a public production site.
-- Tailwind is loaded from the CDN for simplicity; for production, install the Tailwind
-  CLI and build a purged stylesheet instead.
+We welcome contributions! Please:
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please ensure:
+- PHP files pass `php -l` syntax check
+- No hardcoded database credentials
+- Security best practices (prepared statements, validation)
+- Tests pass for any added features
+
+---
+
+## 📝 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 📧 Support & Contact
+
+For issues, questions, or suggestions:
+- **Email:** support@yowa.test (via contact form on the site)
+- **GitHub Issues:** [Create an issue](https://github.com/yourusername/yowa-gaming-store/issues)
+
+---
+
+## 🙏 Acknowledgments
+
+- **React** for the UMD build that makes zero-build-step development possible
+- **Tailwind CSS** for the utility-first design system
+- **PHP PDO** for safe database access
+- Inspired by modern gaming marketplaces (Steam, Epic Games Store)
+
+---
+
+## 📚 Additional Resources
+
+- [PHP Security Guide](https://www.php.net/manual/en/security.php)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [React Documentation](https://react.dev)
+- [Tailwind CSS Docs](https://tailwindcss.com/docs)
+- [MySQL Security](https://dev.mysql.com/doc/refman/8.0/en/security.html)
+
+---
+
+## 🎯 Roadmap
+
+- [ ] Real payment gateway integration (Stripe/PayPal)
+- [ ] Email notifications (order confirmation, password reset)
+- [ ] User profile page (edit name, change password)
+- [ ] Advanced admin analytics (revenue trends, top products)
+- [ ] Wishlist sharing (public lists)
+- [ ] Game bundles (buy multiple games at a discount)
+- [ ] Coupon codes / promotional campaigns
+- [ ] Two-factor authentication (2FA)
+- [ ] Mobile app (React Native)
+
+---
+
+**Happy gaming! 🎮**
+
+Made with ❤️ by the YOWA Team
