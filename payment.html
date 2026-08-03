@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>add to cart</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- HEADER -->
+    <div class="header base">
+
+        <img class="Logo" src="images/play-station white icon.png" width="70" height=auto
+            style="transform: translate(30px,5px);" />
+        <div class="header-links">
+            <a href="index.html"> Home</a>
+            <a href="shop.php"> Our shop</a>
+            <a href="contact_us.html">Contact</a>
+            <button class="btn"> 
+                <a href="sign_in.html">Sign In</a>
+            </button> 
+            <button class="btn"> 
+                <a href="signup.html">Sign up</a>
+            </button> 
+
+        </div>
+    </div>
+
+
+    </div>
+
+    <div class="pay">
+    <div class="payment-card">
+        <h1>Add Payment</h1>
+
+        <form action="payment.php" method="post">
+            
+            <div class="cardinfo">
+                <input type="text" placeholder="Cardholder Name" name="card_name" required>
+                <input type="number" placeholder="Card Number" name="card_num" required>
+                <input type="text" placeholder="Expiration Date (MM/YY)" name="exp_date" required>
+            </div>
+
+            <img class="cardicon" 
+                 src="https://unblast.com/wp-content/uploads/2018/08/Credit-Card-Icons.jpg"
+                 width="120">
+
+            <input class="buynow" type="submit" value="Buy Now">
+
+        </form>
+    </div>
+</div>
+
+</body>
+</html>
